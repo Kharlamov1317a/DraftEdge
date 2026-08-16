@@ -1,0 +1,23 @@
+canonical_column,common_input_names,notes
+player,"Player,name,player_name",required
+team,"Tm,team,recent_team",NFL team
+position,"FantPos,Pos,position",required; QB/RB/WR/TE
+age,Age,optional
+games,"G,games",recommended for historical rate calculations
+passing_yards,"passing_yards,Pass_Yds",rename repeated PFR Yds columns explicitly
+passing_td,"passing_td,passing_tds",rename repeated PFR TD columns explicitly
+interceptions,"Int,interceptions",passing interceptions
+rushing_attempts,"rushing_attempts,Rush_Att,carries",RB/QB usage
+rushing_yards,"rushing_yards,Rush_Yds",rename explicitly
+rushing_td,"rushing_td,rushing_tds",rename explicitly
+targets,"Tgt,targets",receiver usage
+receptions,"Rec,receptions",used for PPR/TE-premium scoring
+receiving_yards,"receiving_yards,Rec_Yds",rename explicitly
+receiving_td,"receiving_td,receiving_tds",rename explicitly
+fantasy_points,"FantPt,PPR,fantasy_points",historical fantasy total
+projection,"projection,projected_points,proj",current-season point projection
+adp,"ADP,average_draft_position",market draft position
+ecr,"ECR,rank,overall_rank",expert/market rank
+injury_status,"injury_status,status",optional current context
+depth_chart_order,"depth_chart_order,depth",optional current context
+sleeper_id,sleeper_id,used for direct Sleeper pick matching

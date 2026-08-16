@@ -1,4 +1,11 @@
-# DraftEdge Fantasy Draft Assistant — v3
+# DraftEdge Fantasy Draft Assistant — v3.1
+
+
+## v3.1 hotfix
+
+- Fixes nflverse loading failure: `The column label 'join_key' is not unique.`
+- The historical-stat merge now includes the `join_key` merge column exactly once.
+- Existing v3 functionality is otherwise unchanged.
 
 DraftEdge is a Streamlit fantasy-football draft assistant designed for redraft leagues and responsive use on desktop and mobile browsers. Version 3 includes automated current-data ingest, Superflex/TE-premium valuation, injury/depth-chart context, weighted projection blending, Monte Carlo "take now vs wait" estimates, and read-only Sleeper live draft synchronization.
 

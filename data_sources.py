@@ -194,7 +194,13 @@ def _build_roster_master(roster: pd.DataFrame, historical: pd.DataFrame) -> pd.D
         return normalize_player_data(historical.drop(columns=["join_key"], errors="ignore"))
 
     if not historical.empty:
-        hist_cols = [c for c in historical.columns if c not in {"join_key", "player_id", "player", "position", "team"}]
+        # Keep the merge key exactly once. Including ``join_key`` in hist_cols
+        # creates duplicate column labels and causes pandas.merge() to raise:
+        # "The column label 'join_key' is not unique."
+        hist_cols = [
+            c for c in historical.columns
+            if c not in {"join_key", "player_id", "player", "position", "team"}
+        ]
         base = base.merge(historical[["join_key"] + hist_cols], on="join_key", how="left")
     base = base.drop(columns=["join_key"], errors="ignore")
     return normalize_player_data(base)

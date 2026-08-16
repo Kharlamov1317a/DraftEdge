@@ -1,0 +1,5 @@
+player,team,position,age,games,passing_yards,passing_td,interceptions,rushing_attempts,rushing_yards,rushing_td,targets,receptions,receiving_yards,receiving_td,fumbles,fantasy_points,projection,adp
+Example QB,DET,QB,27,17,4200,32,10,55,330,4,0,0,0,0,2,,330,42
+Example RB,GB,RB,25,16,0,0,0,245,1120,10,66,52,420,3,2,,275,18
+Example WR,MIN,WR,24,17,0,0,0,2,15,0,156,104,1480,10,1,,305,7
+Example TE,KC,TE,28,16,0,0,0,0,0,0,120,82,930,8,0,,230,35
