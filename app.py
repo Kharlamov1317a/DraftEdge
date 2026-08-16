@@ -35,10 +35,11 @@ from sleeper_client import (
     fetch_league,
     fetch_sleeper_players,
     fetch_user,
+    sleeper_player_image_url,
 )
 
 
-APP_NAME = "DraftEdge Fantasy Draft Assistant v3"
+APP_NAME = "DraftEdge Fantasy Draft Assistant v3.2"
 st.set_page_config(
     page_title=APP_NAME,
     page_icon="🏈",
@@ -51,6 +52,13 @@ st.markdown(
     <style>
     .small-note {font-size: 0.84rem; color: #6b7280;}
     .recommend-card {border: 1px solid #d1d5db; border-radius: 10px; padding: 12px; min-height: 145px;}
+    .draft-board-wrap {overflow-x: auto; width: 100%;}
+    .draft-board-table {border-collapse: collapse; min-width: 980px; width: 100%; font-size: 0.88rem;}
+    .draft-board-table th, .draft-board-table td {border: 1px solid #e5e7eb; padding: 6px 8px; vertical-align: top;}
+    .draft-board-table th {background: #f8fafc; position: sticky; top: 0; z-index: 1;}
+    .draft-board-player {display: flex; align-items: center; gap: 6px; line-height: 1.1;}
+    .draft-board-player img {width: 28px; height: 28px; border-radius: 999px; object-fit: cover; flex: 0 0 28px; background: #f3f4f6;}
+    .draft-board-pos {font-size: 0.72rem; color: #6b7280;}
     .current-pick {font-size: 1.35rem; font-weight: 700;}
     .sync-good {border-left: 4px solid #888; padding-left: 10px;}
 
@@ -115,6 +123,54 @@ def init_state():
             st.session_state[key] = value
 
 
+
+
+def player_image_url(row_or_dict) -> str:
+    if row_or_dict is None:
+        return ""
+    getter = row_or_dict.get if hasattr(row_or_dict, "get") else lambda k, d=None: d
+    image = str(getter("image_url", "") or "").strip()
+    if image:
+        return image
+    sid = str(getter("sleeper_id", "") or "").strip()
+    if sid:
+        return sleeper_player_image_url(sid, thumb=False)
+    return ""
+
+
+def render_player_inline_html(name: str, position: str = "", image_url: str = "") -> str:
+    safe_name = str(name or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    safe_pos = str(position or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    img = f'<img src="{image_url}" alt="">' if image_url else ''
+    return (
+        '<div class="draft-board-player">'
+        + img
+        + f'<div><div>{safe_name}</div>'
+        + (f'<div class="draft-board-pos">{safe_pos}</div>' if safe_pos else '')
+        + '</div></div>'
+    )
+
+
+def render_draft_board_html(draft_log: list[dict], teams: int, rounds: int):
+    rows_by_cell = {(int(p.get("round", 0)), int(p.get("slot", 0))): p for p in draft_log if p.get("round") and p.get("slot")}
+    html = ['<div class="draft-board-wrap"><table class="draft-board-table">']
+    header = '<tr><th>Round</th>' + ''.join([f'<th>Team {i}</th>' for i in range(1, teams + 1)]) + '</tr>'
+    html.append('<thead>' + header + '</thead><tbody>')
+    for rnd in range(1, rounds + 1):
+        cells = [f'<td><strong>{rnd}</strong></td>']
+        for slot in range(1, teams + 1):
+            p = rows_by_cell.get((rnd, slot))
+            if p:
+                image = str(p.get("image_url") or "") or (sleeper_player_image_url(p.get("sleeper_id"), thumb=True) if p.get("sleeper_id") else "")
+                pos_team = ' · '.join([x for x in [str(p.get("position") or ""), str(p.get("nfl_team") or "")] if x])
+                cells.append('<td>' + render_player_inline_html(str(p.get("player") or ""), pos_team, image) + '</td>')
+            else:
+                cells.append('<td>&nbsp;</td>')
+        html.append('<tr>' + ''.join(cells) + '</tr>')
+    html.append('</tbody></table></div>')
+    st.markdown(''.join(html), unsafe_allow_html=True)
+
+
 def pick_info(config: LeagueConfig):
     current_pick = len(st.session_state.draft_log) + 1
     meta = snake_pick_metadata(config.teams, config.rounds)
@@ -134,6 +190,7 @@ def record_pick(player_row: pd.Series, pick_row: pd.Series):
         "player": str(player_row["player"]),
         "position": str(player_row["position"]),
         "nfl_team": str(player_row["team"]),
+        "image_url": player_image_url(player_row),
         "draft_value": float(player_row.get("draft_value", 0)),
         "source": "manual",
     })
@@ -160,10 +217,16 @@ def recommendation_cards(recs: pd.DataFrame):
     for i, (label, row) in enumerate(candidates):
         with cols[i % 3]:
             st.markdown('<div class="recommend-card">', unsafe_allow_html=True)
-            st.markdown(f"**{label}**")
-            st.markdown(f"### {row['player']}")
-            st.caption(f"{row['position']} · {row['team']} · Tier {int(row['tier'])} · {row['role']}")
-            st.write(f"Value **{row['draft_value']:.1f}** · Proj **{row['projection']:.1f}**")
+            ic, tc = st.columns([0.42, 1.0])
+            image = player_image_url(row)
+            with ic:
+                if image:
+                    st.image(image, use_container_width=True)
+            with tc:
+                st.markdown(f"**{label}**")
+                st.markdown(f"### {row['player']}")
+                st.caption(f"{row['position']} · {row['team']} · Tier {int(row['tier'])} · {row['role']}")
+                st.write(f"Value **{row['draft_value']:.1f}** · Proj **{row['projection']:.1f}**")
             if pd.notna(row.get("mc_p_available_next")):
                 st.caption(
                     f"MC next-pick availability: {float(row['mc_p_available_next'])*100:.0f}% · "
@@ -171,7 +234,6 @@ def recommendation_cards(recs: pd.DataFrame):
                 )
             st.caption(str(row.get("why", "")))
             st.markdown("</div>", unsafe_allow_html=True)
-
 
 def serialize_draft(config: LeagueConfig) -> str:
     payload = {
@@ -255,7 +317,7 @@ def connect_sleeper_and_apply_settings(ranked: pd.DataFrame):
 
 init_state()
 
-st.title("🏈 DraftEdge Fantasy Draft Assistant v3")
+st.title("🏈 DraftEdge Fantasy Draft Assistant v3.2")
 st.caption(
     "Phone + desktop ready · live draft board · 2026 data ingest · Superflex/TE premium · "
     "injuries/depth charts · projection blending · Monte Carlo pick advice · Sleeper sync"
@@ -422,6 +484,9 @@ with room_tab:
                 st.session_state.mc_key = None
                 st.rerun()
 
+            selected_image = player_image_url(selected)
+            if selected_image:
+                st.image(selected_image, width=110)
             st.caption(
                 f"Role: **{selected['role']}** · Projection: **{selected['projection']:.1f}** · "
                 f"VOR: **{selected['vor']:.1f}** · ADP/ECR: **{selected['adp']:.1f}/{selected['ecr']:.1f}**"
@@ -445,7 +510,21 @@ with room_tab:
 
         st.subheader("Your roster")
         roster = team_roster(st.session_state.draft_log, cfg.user_slot)
-        st.dataframe(roster, use_container_width=True, hide_index=True)
+        if not roster.empty:
+            if "image_url" in roster.columns:
+                try:
+                    st.dataframe(
+                        roster,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={"image_url": st.column_config.ImageColumn("Photo", width="small")},
+                    )
+                except Exception:
+                    st.dataframe(roster, use_container_width=True, hide_index=True)
+            else:
+                st.dataframe(roster, use_container_width=True, hide_index=True)
+        else:
+            st.dataframe(roster, use_container_width=True, hide_index=True)
 
     with right:
         st.subheader("Top available")
@@ -466,7 +545,8 @@ with room_tab:
 
     st.divider()
     st.subheader("Draft board")
-    st.dataframe(draft_board(st.session_state.draft_log, cfg.teams, cfg.rounds), use_container_width=True)
+    st.caption("Headshots appear once player metadata includes a Sleeper ID (automatic for Sleeper sync and most nflverse loads after metadata enrichment).")
+    render_draft_board_html(st.session_state.draft_log, cfg.teams, cfg.rounds)
 
 with rankings_tab:
     st.subheader("Dynamic player rankings")
@@ -498,7 +578,7 @@ with rankings_tab:
     )
 
     csv = ranked.to_csv(index=False).encode("utf-8")
-    st.download_button("Download current rankings CSV", csv, "draftedge_rankings_v3.csv", "text/csv")
+    st.download_button("Download current rankings CSV", csv, "draftedge_rankings_v3_2.csv", "text/csv")
 
 with sync_tab:
     st.subheader("Sleeper live draft synchronization")
@@ -560,6 +640,12 @@ with data_tab:
         try:
             with st.spinner("Downloading nflverse datasets…"):
                 result = load_nflverse_bundle(int(season), int(historical_season))
+                try:
+                    sp = cached_sleeper_players()
+                    if not sp.empty:
+                        result.players = enrich_players_from_sleeper(result.players, sp)
+                except Exception:
+                    pass
             if result.players.empty:
                 st.error("nflverse returned no usable QB/RB/WR/TE player rows.")
             else:
@@ -700,7 +786,19 @@ with setup_tab:
             st.rerun()
 
     st.subheader("Pick log")
-    st.dataframe(pd.DataFrame(st.session_state.draft_log), use_container_width=True, hide_index=True)
+    pick_log_df = pd.DataFrame(st.session_state.draft_log)
+    if not pick_log_df.empty and "image_url" in pick_log_df.columns:
+        try:
+            st.dataframe(
+                pick_log_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={"image_url": st.column_config.ImageColumn("Photo", width="small")},
+            )
+        except Exception:
+            st.dataframe(pick_log_df, use_container_width=True, hide_index=True)
+    else:
+        st.dataframe(pick_log_df, use_container_width=True, hide_index=True)
 
     st.subheader("Canonical player input columns")
     st.code(
@@ -711,7 +809,7 @@ with setup_tab:
     )
 
 st.caption(
-    "DraftEdge v3 · Recommendations are decision-support estimates, not guaranteed player outcomes or draft probabilities. "
+    "DraftEdge v3.2 · Recommendations are decision-support estimates, not guaranteed player outcomes or draft probabilities. "
     "PFR data is imported by the user; automated data uses nflverse and optional read-only Sleeper synchronization. "
     "The UI is responsive for desktop and mobile browsers."
 )

@@ -11,6 +11,15 @@ from fantasy_engine import LeagueConfig, normalize_name, normalize_player_data
 
 
 BASE_URL = "https://api.sleeper.app/v1"
+SLEEPER_CDN = "https://sleepercdn.com/content/nfl/players"
+
+
+def sleeper_player_image_url(player_id: str | int | None, thumb: bool = False) -> str:
+    pid = str(player_id or "").strip()
+    if not pid:
+        return ""
+    prefix = "thumb/" if thumb else ""
+    return f"{SLEEPER_CDN}/{prefix}{pid}.jpg"
 
 
 def _get_json(path: str, timeout: int = 20):
@@ -64,6 +73,7 @@ def fetch_sleeper_players(active_only: bool = True) -> pd.DataFrame:
             "practice_status": p.get("practice_participation") or "",
             "depth_chart_order": p.get("depth_chart_order"),
             "depth_chart_position": p.get("depth_chart_position") or "",
+            "image_url": sleeper_player_image_url(pid, thumb=False),
             "data_source": "Sleeper player metadata",
         })
     return normalize_player_data(pd.DataFrame(rows))
@@ -84,7 +94,7 @@ def enrich_players_from_sleeper(master: pd.DataFrame, sleeper_players: pd.DataFr
 
     metadata_cols = [
         "name_key", "pos_key", "sleeper_id", "team", "age", "years_exp", "injury_status", "practice_status",
-        "depth_chart_order", "depth_chart_position"
+        "depth_chart_order", "depth_chart_position", "image_url"
     ]
     s = sleeper[metadata_cols].drop_duplicates(["name_key", "pos_key"], keep="first").copy()
     s = s.rename(columns={c: f"sl_{c}" for c in metadata_cols if c not in {"name_key", "pos_key"}})
@@ -93,7 +103,7 @@ def enrich_players_from_sleeper(master: pd.DataFrame, sleeper_players: pd.DataFr
     def fill(base: str, incoming: str):
         if incoming not in out.columns:
             return
-        if base in {"team", "injury_status", "practice_status", "depth_chart_position", "sleeper_id"}:
+        if base in {"team", "injury_status", "practice_status", "depth_chart_position", "sleeper_id", "image_url"}:
             current = out[base].fillna("").astype(str)
             inc = out[incoming].fillna("").astype(str)
             out[base] = np.where(inc.ne(""), inc, current)
@@ -104,7 +114,7 @@ def enrich_players_from_sleeper(master: pd.DataFrame, sleeper_players: pd.DataFr
 
     for base in [
         "sleeper_id", "team", "age", "years_exp", "injury_status", "practice_status", "depth_chart_order",
-        "depth_chart_position"
+        "depth_chart_position", "image_url"
     ]:
         fill(base, f"sl_{base}")
     source = out["data_source"].fillna("").astype(str).str.strip()
@@ -222,6 +232,11 @@ def draft_log_from_sleeper(
         pick_no = int(pick.get("pick_no") or 0)
         round_no = int(pick.get("round") or 0)
         slot = int(pick.get("draft_slot") or 0)
+        image_url = ""
+        if not match.empty and "image_url" in row:
+            image_url = str(row.get("image_url") or "")
+        if not image_url and sid:
+            image_url = sleeper_player_image_url(sid, thumb=False)
         log.append({
             "pick": pick_no,
             "round": round_no,
@@ -232,6 +247,7 @@ def draft_log_from_sleeper(
             "player": name,
             "position": pos,
             "nfl_team": team,
+            "image_url": image_url,
             "draft_value": draft_value,
             "source": "Sleeper sync",
         })

@@ -15,7 +15,7 @@ CANONICAL_COLUMNS = [
     "passing_yards", "passing_td", "interceptions", "rushing_attempts", "rushing_yards", "rushing_td",
     "targets", "receptions", "receiving_yards", "receiving_td", "fumbles", "fantasy_points",
     "projection", "adp", "ecr", "injury_status", "practice_status", "depth_chart_order",
-    "depth_chart_position", "data_source",
+    "depth_chart_position", "image_url", "data_source",
 ]
 
 
@@ -75,6 +75,7 @@ ALIASES = {
     "practice_status": ["practice_status", "practice_participation", "report_status"],
     "depth_chart_order": ["depth_chart_order", "depth_order", "depth"],
     "depth_chart_position": ["depth_chart_position", "depth_position"],
+    "image_url": ["image_url", "headshot_url", "photo_url", "avatar", "photo"],
     "data_source": ["data_source", "source"],
 }
 
@@ -142,7 +143,7 @@ def normalize_player_data(df: pd.DataFrame) -> pd.DataFrame:
         c for c in CANONICAL_COLUMNS
         if c not in {
             "player_id", "sleeper_id", "gsis_id", "player", "team", "position", "injury_status",
-            "practice_status", "depth_chart_position", "data_source"
+            "practice_status", "depth_chart_position", "image_url", "data_source"
         }
     ]
     for col in numeric_cols:
@@ -165,6 +166,7 @@ def normalize_player_data(df: pd.DataFrame) -> pd.DataFrame:
     out["injury_status"] = out["injury_status"].fillna("").astype(str)
     out["practice_status"] = out["practice_status"].fillna("").astype(str)
     out["depth_chart_position"] = out["depth_chart_position"].fillna("").astype(str)
+    out["image_url"] = out["image_url"].fillna("").astype(str)
     out["data_source"] = out["data_source"].fillna("").astype(str)
 
     return out[CANONICAL_COLUMNS].drop_duplicates(subset=["player_id"], keep="first").reset_index(drop=True)
@@ -679,9 +681,9 @@ def draft_board(draft_log: List[dict], teams: int, rounds: int) -> pd.DataFrame:
 def team_roster(draft_log: List[dict], slot: int) -> pd.DataFrame:
     rows = [p for p in draft_log if int(p.get("slot", -1)) == int(slot)]
     if not rows:
-        return pd.DataFrame(columns=["round", "pick", "player", "position", "nfl_team"])
+        return pd.DataFrame(columns=["round", "pick", "image_url", "player", "position", "nfl_team"])
     df = pd.DataFrame(rows)
-    for col in ["round", "pick", "player", "position", "nfl_team"]:
+    for col in ["round", "pick", "image_url", "player", "position", "nfl_team"]:
         if col not in df.columns:
             df[col] = ""
-    return df[["round", "pick", "player", "position", "nfl_team"]].sort_values("pick")
+    return df[["round", "pick", "image_url", "player", "position", "nfl_team"]].sort_values("pick")
