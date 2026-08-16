@@ -38,3 +38,11 @@ finally:
     # Also publish changes that do not explicitly call st.rerun (for example,
     # Sleeper polling during a normal Streamlit rerun).
     publish_board_state_from_session(st.session_state)
+
+with st.sidebar:
+    st.divider()
+    st.page_link(
+        "pages/1_Public_Draft_Board.py",
+        label="Open public draft board",
+        icon="🖥️",
+    )
