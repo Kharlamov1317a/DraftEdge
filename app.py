@@ -60,7 +60,9 @@ def _enrich_public_pick_metadata() -> None:
     by_sleeper = {row["_sleeper_id"]: row for _, row in work.iterrows() if row["_sleeper_id"]}
 
     for pick in log:
-        row = by_player.get(str(pick.get("player_id") or "")) or by_sleeper.get(str(pick.get("sleeper_id") or ""))
+        row = by_player.get(str(pick.get("player_id") or ""))
+        if row is None:
+            row = by_sleeper.get(str(pick.get("sleeper_id") or ""))
         if row is None:
             continue
 
