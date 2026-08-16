@@ -50,7 +50,7 @@ def write_public_board_state(
     next_pick = min(len(picks) + 1, total_picks + 1)
 
     payload = {
-        "version": 2,
+        "version": 3,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "config": cfg,
         "draft_log": picks,
@@ -76,11 +76,11 @@ def publish_board_state_from_session(session_state: Any) -> None:
             "public_owner_banter_enabled": session_state.get("public_owner_banter_enabled"),
             "public_pick_quality_mode": session_state.get("public_pick_quality_mode"),
             "public_gif_frequency": session_state.get("public_gif_frequency"),
+            "public_curated_gif_bias": session_state.get("public_curated_gif_bias"),
             "public_reaction_seconds": session_state.get("public_reaction_seconds"),
         }
         write_public_board_state(config, draft_log, extras=extras)
     except Exception:
-        # Public display synchronization must never interrupt a live draft.
         return
 
 
