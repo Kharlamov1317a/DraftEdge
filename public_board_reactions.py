@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+from functools import lru_cache
 import random
 from typing import Any
 
+import requests
+
+
+GIPHY_SEARCH_URL = "https://api.giphy.com/v2/search"
+GIPHY_CLIENT_KEY = "draftedge-public-board"
 
 GIF_QUERIES: dict[str, list[str]] = {
     "steal": [
@@ -216,12 +222,50 @@ def _pick_category(pick: dict[str, Any]) -> str:
     return "default"
 
 
+@lru_cache(maxsize=128)
+def fetch_giphy_gif(query: str, api_key: str) -> dict[str, str]:
+    """Fetch one relevant reaction GIF using GIPHY's Tenor-compatible search API."""
+    if not str(api_key or "").strip() or not str(query or "").strip():
+        return {}
+    params = {
+        "key": api_key,
+        "q": query,
+        "client_key": GIPHY_CLIENT_KEY,
+        "limit": 12,
+        "contentfilter": "medium",
+        "media_filter": "gif,tinygif",
+        "country": "US",
+        "locale": "en_US",
+    }
+    try:
+        response = requests.get(GIPHY_SEARCH_URL, params=params, timeout=8)
+        response.raise_for_status()
+        payload = response.json()
+    except Exception:
+        return {}
+
+    choices: list[dict[str, str]] = []
+    for item in payload.get("results", []):
+        media_formats = item.get("media_formats") or {}
+        media = media_formats.get("gif") or media_formats.get("tinygif") or {}
+        url = str(media.get("url") or "").strip()
+        if not url:
+            continue
+        choices.append({
+            "url": url,
+            "title": str(item.get("content_description") or query),
+        })
+    return random.choice(choices) if choices else {}
+
+
 def make_pick_reaction(
     pick: dict[str, Any],
     slot_to_owner: dict[int, str],
     *,
     owner_banter_enabled: bool = True,
     quality_mode: bool = True,
+    gif_api_key: str = "",
+    gif_frequency: int = 55,
 ) -> dict[str, str]:
     slot = int(pick.get("slot") or 0)
     owner = slot_to_owner.get(slot, f"Team {slot}")
@@ -245,10 +289,17 @@ def make_pick_reaction(
     if owner_banter_enabled and random.random() < 0.75:
         sub = f"{sub} {random.choice(OWNER_JABS).format(owner=owner)}".strip()
 
+    gif_query = random.choice(GIF_QUERIES.get(category) or GIF_QUERIES["default"])
+    gif = {}
+    if str(gif_api_key or "").strip() and random.randint(1, 100) <= max(0, min(int(gif_frequency), 100)):
+        gif = fetch_giphy_gif(gif_query, gif_api_key)
+
     return {
         "category": category,
         "kicker": TITLES.get(category, TITLES["default"]),
         "line": line,
         "sub": sub,
-        "gif_query": random.choice(GIF_QUERIES.get(category) or GIF_QUERIES["default"]),
+        "gif_query": gif_query,
+        "gif_url": gif.get("url", ""),
+        "gif_title": gif.get("title", ""),
     }
