@@ -31,14 +31,15 @@ def _config_to_dict(config: Any) -> dict:
     return {name: getattr(config, name) for name in fields if hasattr(config, name)}
 
 
-def write_public_board_state(config: Any, draft_log: list[dict] | None) -> None:
-    """Atomically publish the active draft for board-only viewer sessions.
-
-    The file is intentionally runtime-only. On Streamlit Community Cloud, all
-    browser sessions for the running app process can read the same file, which
-    lets a projector/TV page update independently from the draft-management tab.
-    """
+def write_public_board_state(
+    config: Any,
+    draft_log: list[dict] | None,
+    extras: dict[str, Any] | None = None,
+) -> None:
+    """Atomically publish the active draft for board-only viewer sessions."""
     cfg = _config_to_dict(config)
+    if extras:
+        cfg.update({k: v for k, v in extras.items() if v is not None})
     if not cfg:
         return
 
@@ -49,7 +50,7 @@ def write_public_board_state(config: Any, draft_log: list[dict] | None) -> None:
     next_pick = min(len(picks) + 1, total_picks + 1)
 
     payload = {
-        "version": 1,
+        "version": 2,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "config": cfg,
         "draft_log": picks,
@@ -68,7 +69,16 @@ def publish_board_state_from_session(session_state: Any) -> None:
     try:
         config = session_state.get("config")
         draft_log = session_state.get("draft_log", [])
-        write_public_board_state(config, draft_log)
+        extras = {
+            "owner_names": session_state.get("owner_names"),
+            "public_reactions_enabled": session_state.get("public_reactions_enabled"),
+            "public_gifs_enabled": session_state.get("public_gifs_enabled"),
+            "public_owner_banter_enabled": session_state.get("public_owner_banter_enabled"),
+            "public_pick_quality_mode": session_state.get("public_pick_quality_mode"),
+            "public_gif_frequency": session_state.get("public_gif_frequency"),
+            "public_reaction_seconds": session_state.get("public_reaction_seconds"),
+        }
+        write_public_board_state(config, draft_log, extras=extras)
     except Exception:
         # Public display synchronization must never interrupt a live draft.
         return
