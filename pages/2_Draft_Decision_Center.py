@@ -132,7 +132,11 @@ real_adp = int(pd.to_numeric(ranked["adp"], errors="coerce").notna().sum())
 real_ecr = int(pd.to_numeric(ranked["ecr"], errors="coerce").notna().sum())
 current_proj = int(ranked["projection_source"].ne("Historical fallback").sum())
 high_conf = int(ranked["data_confidence"].eq("High").sum())
-injury_flags = int(~recs["injury_display"].eq("🟢 No current injury flag")) if "injury_display" in recs else 0
+injury_flags = (
+    int(recs["injury_display"].fillna("").astype(str).str.startswith(("🟡", "🔴")).sum())
+    if "injury_display" in recs
+    else 0
+)
 
 m1, m2, m3, m4, m5 = st.columns(5)
 m1.metric("Current projections", current_proj)
