@@ -118,11 +118,13 @@ try:
         st.divider()
         st.subheader("Supported projection exports")
         st.info(
-            "**Footballguys Draft Projections CSVs are now auto-detected.** Download the projections CSV from Footballguys, "
-            "then upload it under **Projection blending → Projection files** above. DraftEdge recognizes Player/Pos/GMS/PPG/Points, "
-            "uses **Points** as the season projection, parses team abbreviations appended to player names when necessary, and does "
-            "**not** mislabel Footballguys' projection Rank as ECR. The projection audit table will identify the file as "
-            "Footballguys Draft Projections when recognized."
+            "**Footballguys `projection-set-preseason-all-YYYY.csv` exports are now auto-detected.** "
+            "The raw file contains multiple expert projection sets plus separate Consensus sets rather than a Points column. "
+            "DraftEdge automatically selects the offensive Consensus set containing QB/RB/WR/TE projections, reads the raw "
+            "passing/rushing/receiving statistics, and calculates projected fantasy points using your **current DraftEdge league "
+            "scoring settings**. This means PPR, TE premium, passing-TD value, interception penalty, and yardage scoring should be "
+            "set correctly under League setup before you blend the file. The projection audit table reports the selected "
+            "Footballguys Consensus set and scoring basis."
         )
 except Exception:
     pass
