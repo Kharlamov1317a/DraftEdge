@@ -110,6 +110,23 @@ finally:
     _enrich_public_pick_metadata()
     publish_board_state_from_session(st.session_state)
 
+# Add format guidance directly to the existing Data Hub tab without duplicating
+# the legacy projection uploader. Footballguys CSV normalization happens inside
+# data_sources.blend_projection_sources(), so the standard uploader works as-is.
+try:
+    with data_tab:
+        st.divider()
+        st.subheader("Supported projection exports")
+        st.info(
+            "**Footballguys Draft Projections CSVs are now auto-detected.** Download the projections CSV from Footballguys, "
+            "then upload it under **Projection blending → Projection files** above. DraftEdge recognizes Player/Pos/GMS/PPG/Points, "
+            "uses **Points** as the season projection, parses team abbreviations appended to player names when necessary, and does "
+            "**not** mislabel Footballguys' projection Rank as ECR. The projection audit table will identify the file as "
+            "Footballguys Draft Projections when recognized."
+        )
+except Exception:
+    pass
+
 
 with st.sidebar:
     st.divider()
@@ -120,7 +137,7 @@ with st.sidebar:
         icon="🧭",
         use_container_width=True,
     )
-    st.caption("Model Rank, Market Rank, Pick Rank, risk, projection provenance, and player comparison.")
+    st.caption("Model/Market/Pick Rank, live injury context, expected availability, bye-week conflicts, risk, and player comparison.")
 
     st.divider()
     st.subheader("Public draft board")
