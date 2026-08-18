@@ -2,9 +2,9 @@ from __future__ import annotations
 
 """DraftEdge data-source compatibility layer.
 
-Adds nflverse headshots and normalizes projection exports from common providers,
-including Footballguys Draft Projections, before the legacy projection blender
-matches them to the DraftEdge player pool.
+This module preserves the legacy nflverse/projection loaders, adds nflverse
+headshots, and normalizes Footballguys projection exports before blending them
+into the DraftEdge player pool.
 """
 
 import re
@@ -15,7 +15,7 @@ import pandas as pd
 
 import data_sources_legacy as _legacy
 from data_sources_legacy import *  # noqa: F401,F403
-from fantasy_engine import normalize_name, normalize_player_data
+from fantasy_engine import LeagueConfig, normalize_name, normalize_player_data
 
 
 _CURRENT_NFL_TEAMS = {
@@ -24,6 +24,7 @@ _CURRENT_NFL_TEAMS = {
     "NYJ", "PHI", "PIT", "SEA", "SF", "TB", "TEN", "WAS",
 }
 _TEAM_ALIASES = {"JAC": "JAX", "WSH": "WAS", "LA": "LAR", "OAK": "LV", "SD": "LAC", "STL": "LAR"}
+_FANTASY_POSITIONS = {"QB", "RB", "WR", "TE"}
 
 
 def _to_pandas(obj) -> pd.DataFrame:
@@ -52,139 +53,177 @@ def _find_col(df: pd.DataFrame, candidates: Iterable[str]):
     return None
 
 
-def _dedupe_headers(values: list[str]) -> list[str]:
-    counts: dict[str, int] = {}
-    out: list[str] = []
-    for i, raw in enumerate(values):
-        base = str(raw).strip()
-        if not base or base.lower() == "nan":
-            base = f"column_{i + 1}"
-        n = counts.get(base, 0)
-        counts[base] = n + 1
-        out.append(base if n == 0 else f"{base}.{n}")
-    return out
+def _active_scoring_config(explicit: LeagueConfig | None = None) -> LeagueConfig:
+    """Use the active DraftEdge league scoring when running inside Streamlit."""
+    if isinstance(explicit, LeagueConfig):
+        return explicit
+    try:
+        import streamlit as st
+
+        cfg = st.session_state.get("config")
+        if isinstance(cfg, LeagueConfig):
+            return cfg
+    except Exception:
+        pass
+    return LeagueConfig()
 
 
-def _recover_multiline_header(frame: pd.DataFrame) -> pd.DataFrame:
-    """Recover exports where a category row was read as the CSV header."""
-    if frame.empty:
-        return frame.copy()
-    if _find_col(frame, ["player", "name", "player_name"]) is not None:
-        return frame.copy()
-
-    for idx in frame.head(6).index:
-        values = [str(v).strip() for v in frame.loc[idx].tolist()]
-        cleaned = {_clean(v) for v in values}
-        if "player" in cleaned and ("pos" in cleaned or "position" in cleaned) and (
-            "points" in cleaned or "fpts" in cleaned or "fantasypoints" in cleaned
-        ):
-            out = frame.loc[frame.index > idx].copy()
-            out.columns = _dedupe_headers(values)
-            return out.reset_index(drop=True)
-    return frame.copy()
+def _num(frame: pd.DataFrame, column: str) -> pd.Series:
+    if column not in frame.columns:
+        return pd.Series(0.0, index=frame.index, dtype=float)
+    return pd.to_numeric(frame[column], errors="coerce").fillna(0.0)
 
 
-def _footballguys_signature(frame: pd.DataFrame, source_name: str = "") -> bool:
-    if "footballguys" in str(source_name).lower() or re.search(r"\bfbg\b", str(source_name).lower()):
-        return True
-    test = _recover_multiline_header(frame)
-    keys = {_clean(c) for c in test.columns}
-    has_player = any(k in keys for k in {"player", "name", "playername"})
-    has_pos = any(k in keys for k in {"pos", "position"})
-    has_games = any(k in keys for k in {"gms", "games", "projectedgames"})
-    has_points = any(k == "points" or k.startswith("points") or k in {"fpts", "fantasypoints"} for k in keys)
-    return has_player and has_pos and has_games and has_points
+def _footballguys_raw_signature(frame: pd.DataFrame, source_name: str = "") -> bool:
+    """Detect the raw Footballguys `projection-set-...csv` export.
 
-
-def _projection_points_col(frame: pd.DataFrame):
-    preferred = ["fantasy_points", "fantasypoints", "fpts", "projected_points", "projectedpoints", "points"]
-    for candidate in preferred:
-        col = _find_col(frame, [candidate])
-        if col is not None:
-            return col
-
-    candidates = []
-    for idx, col in enumerate(frame.columns):
-        key = _clean(col)
-        if "ppg" in key or "pergame" in key:
-            continue
-        if key.startswith("points") or key.startswith("fpts"):
-            numeric = pd.to_numeric(frame[col], errors="coerce")
-            candidates.append((int(numeric.notna().sum()), idx, col))
-    if candidates:
-        candidates.sort()
-        return candidates[-1][2]
-    return None
-
-
-def _parse_player_and_team(value: object) -> tuple[str, str]:
-    text = re.sub(r"\s+", " ", str(value or "")).strip()
-    if not text:
-        return "", ""
-    match = re.search(r"\s+([A-Za-z]{2,3})$", text)
-    if match:
-        token = match.group(1).upper()
-        token = _TEAM_ALIASES.get(token, token)
-        if token in _CURRENT_NFL_TEAMS:
-            return text[: match.start()].strip(), token
-    return text, ""
-
-
-def normalize_footballguys_projection_csv(frame: pd.DataFrame) -> pd.DataFrame:
-    """Normalize a Footballguys Draft Projections CSV for DraftEdge blending.
-
-    Footballguys' projection table uses fields such as Player, Pos, GMS, PPG and
-    Points. ``Points`` is treated as the season fantasy-point projection. The
-    table's ``Rank`` is deliberately *not* treated as ECR because it is a rank of
-    the projection output, not an independent market-consensus rank.
+    The real export contains multiple expert/consensus projection sets and raw
+    stat columns such as pass-yds, rush-car, rec-tgt, and rec-yds. It does not
+    contain a pre-computed fantasy-points column.
     """
     if frame is None or len(frame) == 0:
-        return pd.DataFrame(columns=["player", "team", "position", "projection"])
+        return False
+    keys = {str(c).strip().lower() for c in frame.columns}
+    required = {"id", "name", "pos", "team", "set-id", "set-name", "ssn-gms"}
+    stat_fields = {
+        "pass-yds", "pass-td", "pass-int", "rush-car", "rush-yds", "rush-td",
+        "rec-rec", "rec-tgt", "rec-yds", "rec-td", "fum-lost",
+    }
+    return required.issubset(keys) and len(keys & stat_fields) >= 6
 
-    work = _recover_multiline_header(pd.DataFrame(frame).copy())
-    player_col = _find_col(work, ["player", "player_name", "name", "playername"])
+
+def _footballguys_points_signature(frame: pd.DataFrame, source_name: str = "") -> bool:
+    """Keep compatibility with simpler Footballguys table-style CSV exports."""
+    if frame is None or len(frame) == 0:
+        return False
+    keys = {_clean(c) for c in frame.columns}
+    has_player = any(k in keys for k in {"player", "name", "playername"})
+    has_pos = any(k in keys for k in {"pos", "position"})
+    has_points = any(k in keys for k in {"points", "fpts", "fantasypoints", "projectedpoints"})
+    return has_player and has_pos and has_points and (
+        "footballguys" in str(source_name).lower() or "gms" in keys or "ppg" in keys
+    )
+
+
+def _select_footballguys_offensive_consensus(frame: pd.DataFrame) -> tuple[pd.DataFrame, str]:
+    work = frame.copy()
+    work["__pos"] = work["pos"].fillna("").astype(str).str.upper().str.strip()
+    work = work[work["__pos"].isin(_FANTASY_POSITIONS)].copy()
+    if work.empty:
+        raise ValueError("Footballguys export contained no QB/RB/WR/TE rows.")
+
+    consensus = work[work["set-name"].fillna("").astype(str).str.strip().str.lower().eq("consensus")].copy()
+    if not consensus.empty:
+        grouped = (
+            consensus.groupby("set-id", dropna=False)
+            .agg(rows=("name", "size"), positions=("__pos", "nunique"))
+            .reset_index()
+            .sort_values(["positions", "rows"], ascending=False)
+        )
+        selected_id = grouped.iloc[0]["set-id"]
+        selected = consensus[consensus["set-id"].eq(selected_id)].copy()
+        return selected, str(selected_id)
+
+    # Defensive fallback: if a future export omits the explicit Consensus set,
+    # build a median consensus across the offensive projection sets.
+    stat_cols = [
+        c for c in work.columns
+        if c.startswith(("pass-", "rush-", "rec-", "fum-")) or c == "ssn-gms"
+    ]
+    key_cols = ["id", "name", "pos", "team"]
+    agg = {c: "median" for c in stat_cols}
+    selected = work.groupby(key_cols, as_index=False, dropna=False).agg(agg)
+    selected["__pos"] = selected["pos"].fillna("").astype(str).str.upper().str.strip()
+    return selected, "median-of-experts"
+
+
+def _score_footballguys_raw(frame: pd.DataFrame, config: LeagueConfig) -> pd.Series:
+    """Score Footballguys raw stat projections with the active league settings."""
+    pos = frame["pos"].fillna("").astype(str).str.upper().str.strip()
+    points = (
+        _num(frame, "pass-yds") / float(config.pass_yd_per_point)
+        + _num(frame, "pass-td") * float(config.pass_td)
+        + _num(frame, "pass-int") * float(config.interception)
+        + _num(frame, "rush-yds") / float(config.rush_yd_per_point)
+        + _num(frame, "rush-td") * float(config.rush_td)
+        + _num(frame, "rec-rec") * float(config.ppr)
+        + _num(frame, "rec-rec") * pos.eq("TE").astype(float) * float(config.te_premium)
+        + _num(frame, "rec-yds") / float(config.rec_yd_per_point)
+        + _num(frame, "rec-td") * float(config.rec_td)
+        + _num(frame, "fum-lost") * float(config.fumble)
+    )
+    # Successful two-point conversions are worth two fantasy points in standard
+    # NFL fantasy scoring. DraftEdge currently has no custom 2PT setting.
+    points += 2.0 * (
+        _num(frame, "pass-2pt") + _num(frame, "rush-2pt") + _num(frame, "rec-2pt")
+    )
+    return points
+
+
+def normalize_footballguys_projection_csv(
+    frame: pd.DataFrame,
+    scoring_config: LeagueConfig | None = None,
+) -> tuple[pd.DataFrame, dict[str, str]]:
+    """Normalize either Footballguys projection export format.
+
+    For the raw `projection-set-preseason-all-YYYY.csv` format, DraftEdge selects
+    the offensive Consensus projection set and calculates fantasy points from the
+    raw projected stats using the *active DraftEdge league scoring*. This is more
+    faithful than assuming a fixed PPR scoring system because the raw CSV itself
+    does not store the scoring parameters used on the Footballguys web page.
+    """
+    if frame is None or len(frame) == 0:
+        return pd.DataFrame(columns=["player", "team", "position", "projection"]), {}
+
+    config = _active_scoring_config(scoring_config)
+    work = pd.DataFrame(frame).copy()
+
+    if _footballguys_raw_signature(work):
+        selected, set_id = _select_footballguys_offensive_consensus(work)
+        out = pd.DataFrame(index=selected.index)
+        out["player"] = selected["name"].fillna("").astype(str).str.strip()
+        out["team"] = (
+            selected["team"].fillna("").astype(str).str.upper().str.strip().replace(_TEAM_ALIASES)
+        )
+        out["position"] = selected["pos"].fillna("").astype(str).str.upper().str.strip()
+        out["projection"] = _score_footballguys_raw(selected, config).round(3)
+        out["projected_games"] = pd.to_numeric(selected["ssn-gms"], errors="coerce")
+        out["footballguys_id"] = selected["id"].fillna("").astype(str)
+        out = out[out["position"].isin(_FANTASY_POSITIONS)].copy()
+        out = out[out["player"].ne("") & out["projection"].notna()].reset_index(drop=True)
+
+        scoring_text = (
+            f"PPR={config.ppr:g}; pass {config.pass_yd_per_point:g} yds/pt; pass TD={config.pass_td:g}; "
+            f"INT={config.interception:g}; rush/rec TD={config.rush_td:g}/{config.rec_td:g}; "
+            f"TE premium={config.te_premium:g}"
+        )
+        meta = {
+            "format": "Footballguys raw projection-set CSV",
+            "detail": f"offensive Consensus set {set_id}; {len(out)} QB/RB/WR/TE rows; scored with active DraftEdge settings ({scoring_text})",
+        }
+        return out, meta
+
+    # Simpler table-style Footballguys exports with a precomputed Points column.
+    player_col = _find_col(work, ["player", "name", "player_name", "playername"])
     pos_col = _find_col(work, ["pos", "position", "fantasy_position"])
     team_col = _find_col(work, ["team", "tm", "nfl_team", "nflteam"])
-    points_col = _projection_points_col(work)
-    gms_col = _find_col(work, ["gms", "games", "projected_games", "projectedgames"])
-    ppg_col = _find_col(work, ["ppg", "points_per_game", "pointspergame"])
-    adp_col = _find_col(work, ["adp", "average_draft_position", "avg_pick"])
-    ecr_col = _find_col(work, ["ecr", "expert_consensus_rank", "expertconsensusrank"])
+    points_col = _find_col(work, ["points", "fpts", "fantasy_points", "projected_points"])
+    if player_col is None or pos_col is None or points_col is None:
+        raise ValueError(
+            "Footballguys projection CSV could not be recognized. Expected either the raw projection-set export "
+            "or a table with player/name, position, and Points/fpts."
+        )
 
-    if player_col is None or pos_col is None:
-        raise ValueError("Footballguys projection CSV could not be recognized: Player and Pos columns are required.")
-    if points_col is None and not (gms_col is not None and ppg_col is not None):
-        raise ValueError("Footballguys projection CSV could not be recognized: expected Points, or both GMS and PPG.")
-
-    parsed = work[player_col].map(_parse_player_and_team)
     out = pd.DataFrame(index=work.index)
-    out["player"] = parsed.map(lambda x: x[0])
-    parsed_team = parsed.map(lambda x: x[1])
-    if team_col is not None:
-        explicit_team = work[team_col].fillna("").astype(str).str.upper().str.strip().replace(_TEAM_ALIASES)
-        out["team"] = explicit_team.where(explicit_team.ne(""), parsed_team)
-    else:
-        out["team"] = parsed_team
-    out["position"] = work[pos_col].fillna("").astype(str).str.upper().str.strip().replace({"PK": "K"})
-
-    if points_col is not None:
-        out["projection"] = pd.to_numeric(work[points_col], errors="coerce")
-    else:
-        out["projection"] = pd.to_numeric(work[gms_col], errors="coerce") * pd.to_numeric(work[ppg_col], errors="coerce")
-
-    if gms_col is not None:
-        out["projected_games"] = pd.to_numeric(work[gms_col], errors="coerce")
-    if ppg_col is not None:
-        out["projected_ppg"] = pd.to_numeric(work[ppg_col], errors="coerce")
-    if adp_col is not None:
-        out["adp"] = pd.to_numeric(work[adp_col], errors="coerce")
-    if ecr_col is not None:
-        out["ecr"] = pd.to_numeric(work[ecr_col], errors="coerce")
-
-    out = out[out["position"].isin(["QB", "RB", "WR", "TE"])].copy()
-    out = out[out["player"].astype(str).str.strip().ne("") & out["projection"].notna()].copy()
-    out["source_format"] = "Footballguys Draft Projections"
-    return out.reset_index(drop=True)
+    out["player"] = work[player_col].fillna("").astype(str).str.strip()
+    out["team"] = work[team_col].fillna("").astype(str).str.upper().str.strip() if team_col else ""
+    out["position"] = work[pos_col].fillna("").astype(str).str.upper().str.strip()
+    out["projection"] = pd.to_numeric(work[points_col], errors="coerce")
+    out = out[out["position"].isin(_FANTASY_POSITIONS) & out["projection"].notna()].reset_index(drop=True)
+    return out, {
+        "format": "Footballguys table projection CSV",
+        "detail": f"{len(out)} QB/RB/WR/TE rows; precomputed Points imported",
+    }
 
 
 def _attach_nflverse_headshots(players: pd.DataFrame) -> tuple[pd.DataFrame, int]:
@@ -260,15 +299,15 @@ def blend_projection_sources(
     baseline_projection: pd.Series | None = None,
     baseline_weight: float = 1.0,
 ):
-    """Blend projection sources, auto-normalizing Footballguys CSV exports."""
+    """Blend projection sources, auto-normalizing Footballguys exports."""
     prepared: list[tuple[str, pd.DataFrame, float]] = []
-    footballguys_sources: set[str] = set()
+    source_meta: dict[str, dict[str, str]] = {}
 
     for source_name, frame, weight in sources:
         f = pd.DataFrame(frame).copy() if frame is not None else pd.DataFrame()
-        if _footballguys_signature(f, source_name):
-            f = normalize_footballguys_projection_csv(f)
-            footballguys_sources.add(str(source_name))
+        if _footballguys_raw_signature(f, source_name) or _footballguys_points_signature(f, source_name):
+            f, meta = normalize_footballguys_projection_csv(f)
+            source_meta[str(source_name)] = meta
         prepared.append((source_name, f, weight))
 
     updated, audit = _legacy.blend_projection_sources(
@@ -280,8 +319,11 @@ def blend_projection_sources(
     if audit is not None and not audit.empty:
         audit = audit.copy()
         audit["format"] = audit["source"].astype(str).map(
-            lambda name: "Footballguys Draft Projections" if name in footballguys_sources else "Generic projection CSV"
+            lambda name: source_meta.get(name, {}).get("format", "Generic projection CSV")
         )
-        is_fbg = audit["source"].astype(str).isin(footballguys_sources)
-        audit.loc[is_fbg & audit["note"].eq("ok"), "note"] = "ok; Footballguys Points imported as season projection"
+        audit["details"] = audit["source"].astype(str).map(
+            lambda name: source_meta.get(name, {}).get("detail", "")
+        )
+        recognized = audit["source"].astype(str).isin(source_meta)
+        audit.loc[recognized & audit["note"].eq("ok"), "note"] = "ok; Footballguys projections normalized before blending"
     return updated, audit
