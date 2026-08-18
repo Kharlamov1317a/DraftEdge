@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from fantasy_engine import LeagueConfig
-from ranking_v2 import player_explanation, prepare_rankings, recommend_players
+from ranking_v2_live import player_explanation, prepare_rankings, recommend_players
 
 
 st.set_page_config(page_title="DraftEdge Decision Center", page_icon="🧭", layout="wide")
