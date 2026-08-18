@@ -198,7 +198,7 @@ with st.sidebar:
             disabled=not st.session_state.public_reactions_enabled,
         )
         st.session_state.public_pick_quality_mode = st.toggle(
-            "Use pick context for reactions", value=bool(st.session_state.public_reactions_enabled),
+            "Use pick context for reactions", value=bool(st.session_state.public_pick_quality_mode),
             disabled=not st.session_state.public_reactions_enabled,
             help=(
                 "Uses private DraftEdge rank/ADP plus draft history to detect steals, reaches, position runs, "
