@@ -9,9 +9,9 @@ import pandas as pd
 import streamlit as st
 
 import fantasy_engine as _fantasy_engine
-from ranking_v2 import prepare_rankings as _prepare_rankings_v2
-from ranking_v2 import recommend_players as _recommend_players_v2
-from ranking_v2 import simulate_opponent_pick as _simulate_opponent_pick_v2
+from ranking_v2_live import prepare_rankings as _prepare_rankings_v2
+from ranking_v2_live import recommend_players as _recommend_players_v2
+from ranking_v2_live import simulate_opponent_pick as _simulate_opponent_pick_v2
 from shared_draft_state import publish_board_state_from_session
 
 
