@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""DraftEdge entry point with public-board controls."""
+"""DraftEdge entry point with transparent Ranking v2 + public-board controls."""
 
 import os
 from pathlib import Path
@@ -8,8 +8,16 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+import fantasy_engine as _fantasy_engine
+from ranking_v2 import prepare_rankings as _prepare_rankings_v2
+from ranking_v2 import recommend_players as _recommend_players_v2
+from ranking_v2 import simulate_opponent_pick as _simulate_opponent_pick_v2
 from shared_draft_state import publish_board_state_from_session
 
+
+_fantasy_engine.prepare_rankings = _prepare_rankings_v2
+_fantasy_engine.recommend_players = _recommend_players_v2
+_fantasy_engine.simulate_opponent_pick = _simulate_opponent_pick_v2
 
 if not hasattr(st, "_draftedge_original_rerun"):
     st._draftedge_original_rerun = st.rerun
@@ -47,15 +55,14 @@ def _giphy_key_configured() -> bool:
 
 
 def _enrich_public_pick_metadata() -> None:
-    """Attach private ranking context used only for public reaction selection."""
     ranked = globals().get("ranked")
     log = st.session_state.get("draft_log", [])
     if not isinstance(ranked, pd.DataFrame) or ranked.empty or not log:
         return
 
     work = ranked.copy()
-    work["_player_id"] = work.get("player_id", "").fillna("").astype(str) if "player_id" in work else ""
-    work["_sleeper_id"] = work.get("sleeper_id", "").fillna("").astype(str) if "sleeper_id" in work else ""
+    work["_player_id"] = work["player_id"].fillna("").astype(str) if "player_id" in work else ""
+    work["_sleeper_id"] = work["sleeper_id"].fillna("").astype(str) if "sleeper_id" in work else ""
     by_player = {row["_player_id"]: row for _, row in work.iterrows() if row["_player_id"]}
     by_sleeper = {row["_sleeper_id"]: row for _, row in work.iterrows() if row["_sleeper_id"]}
 
@@ -105,6 +112,16 @@ finally:
 
 
 with st.sidebar:
+    st.divider()
+    st.subheader("Decision support")
+    st.page_link(
+        "pages/2_Draft_Decision_Center.py",
+        label="Open Draft Decision Center",
+        icon="🧭",
+        use_container_width=True,
+    )
+    st.caption("Model Rank, Market Rank, Pick Rank, risk, projection provenance, and player comparison.")
+
     st.divider()
     st.subheader("Public draft board")
     st.page_link("pages/1_Public_Draft_Board.py", label="Open public draft board", icon="🖥️", use_container_width=True)
