@@ -123,8 +123,9 @@ try:
             "DraftEdge automatically selects the offensive Consensus set containing QB/RB/WR/TE projections, reads the raw "
             "passing/rushing/receiving statistics, and calculates projected fantasy points using your **current DraftEdge league "
             "scoring settings**. This means PPR, TE premium, passing-TD value, interception penalty, and yardage scoring should be "
-            "set correctly under League setup before you blend the file. The projection audit table reports the selected "
-            "Footballguys Consensus set and scoring basis."
+            "set correctly before you blend the file. Use **Advanced scoring** in the sidebar for non-default values. "
+            "The Footballguys URL you supplied uses 1 PPR, 25 passing yards/point, 4-point passing TDs, and -1 per interception. "
+            "The projection audit table reports the selected Footballguys Consensus set and scoring basis."
         )
 except Exception:
     pass
@@ -140,6 +141,33 @@ with st.sidebar:
         use_container_width=True,
     )
     st.caption("Model/Market/Pick Rank, live injury context, expected availability, bye-week conflicts, risk, and player comparison.")
+
+    with st.expander("Advanced scoring", expanded=False):
+        cfg = st.session_state.config
+        st.caption(
+            "These values are used both for DraftEdge rankings and for scoring raw Footballguys stat projections. "
+            "For the Footballguys URL you supplied, use 25 pass yds/pt, 4 pass-TD points, and -1 interception."
+        )
+        adv_pass_yd = st.number_input("Passing yards per point", 1.0, 100.0, float(cfg.pass_yd_per_point), 1.0)
+        adv_pass_td = st.number_input("Passing TD points", 0.0, 10.0, float(cfg.pass_td), 0.5)
+        adv_int = st.number_input("Interception points", -10.0, 0.0, float(cfg.interception), 0.5)
+        adv_rush_yd = st.number_input("Rushing yards per point", 1.0, 50.0, float(cfg.rush_yd_per_point), 1.0)
+        adv_rush_td = st.number_input("Rushing TD points", 0.0, 10.0, float(cfg.rush_td), 0.5)
+        adv_rec_yd = st.number_input("Receiving yards per point", 1.0, 50.0, float(cfg.rec_yd_per_point), 1.0)
+        adv_rec_td = st.number_input("Receiving TD points", 0.0, 10.0, float(cfg.rec_td), 0.5)
+        adv_fumble = st.number_input("Fumble-lost points", -10.0, 0.0, float(cfg.fumble), 0.5)
+        if st.button("Apply advanced scoring", use_container_width=True):
+            st.session_state.config = _fantasy_engine.LeagueConfig(
+                teams=cfg.teams, rounds=cfg.rounds, user_slot=cfg.user_slot,
+                qb=cfg.qb, rb=cfg.rb, wr=cfg.wr, te=cfg.te, flex=cfg.flex,
+                superflex=cfg.superflex, bench=cfg.bench, ppr=cfg.ppr, te_premium=cfg.te_premium,
+                pass_yd_per_point=float(adv_pass_yd), pass_td=float(adv_pass_td), interception=float(adv_int),
+                rush_yd_per_point=float(adv_rush_yd), rush_td=float(adv_rush_td),
+                rec_yd_per_point=float(adv_rec_yd), rec_td=float(adv_rec_td), fumble=float(adv_fumble),
+            )
+            st.session_state.mc_key = None
+            st.success("Advanced scoring applied.")
+            st.rerun()
 
     st.divider()
     st.subheader("Public draft board")
@@ -170,7 +198,7 @@ with st.sidebar:
             disabled=not st.session_state.public_reactions_enabled,
         )
         st.session_state.public_pick_quality_mode = st.toggle(
-            "Use pick context for reactions", value=bool(st.session_state.public_pick_quality_mode),
+            "Use pick context for reactions", value=bool(st.session_state.public_reactions_enabled),
             disabled=not st.session_state.public_reactions_enabled,
             help=(
                 "Uses private DraftEdge rank/ADP plus draft history to detect steals, reaches, position runs, "
