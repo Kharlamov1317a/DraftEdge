@@ -26,7 +26,11 @@ def _config_to_dict(config: Any) -> dict:
         return dict(config)
     fields = [
         "teams", "rounds", "user_slot", "qb", "rb", "wr", "te", "flex",
-        "superflex", "bench", "ppr", "te_premium",
+        "superflex", "k", "dst", "bench", "ppr", "te_premium",
+        "kicker_xp_made", "kicker_xp_missed", "kicker_fg_made", "kicker_fg_missed",
+        "dst_sack", "dst_interception", "dst_fumble_recovery", "dst_td", "dst_safety",
+        "dst_blocked_kick", "dst_return_td", "dst_two_point_return", "dst_points_allowed_enabled",
+        "dst_pa_0", "dst_pa_1_6", "dst_pa_7_13", "dst_pa_14_20", "dst_pa_21_27", "dst_pa_28_34", "dst_pa_35_plus",
     ]
     return {name: getattr(config, name) for name in fields if hasattr(config, name)}
 
@@ -50,7 +54,7 @@ def write_public_board_state(
     next_pick = min(len(picks) + 1, total_picks + 1)
 
     payload = {
-        "version": 3,
+        "version": 4,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "config": cfg,
         "draft_log": picks,
