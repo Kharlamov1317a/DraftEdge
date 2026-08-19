@@ -119,6 +119,7 @@ def install_sleeper_support(sleeper_module, engine_module) -> None:
             import streamlit as st
             st.session_state.special_k_slots = int(cfg.k)
             st.session_state.special_dst_slots = int(cfg.dst)
+            st.session_state._draftedge_special_update_intent = True
         except Exception:
             pass
         return cfg
@@ -130,7 +131,7 @@ def install_sleeper_support(sleeper_module, engine_module) -> None:
             if item["position"] == "DST":
                 team = str(item.get("nfl_team") or "").upper().strip()
                 if not str(item.get("player") or "").strip() or str(item.get("player") or "").startswith("Sleeper player"):
-                    item["player"] = f"{team or str(item.get('sleeper_id') or '').upper()} D/ST"
+                    item["player"] = f"{TEAM_NAMES.get(team, team or str(item.get('sleeper_id') or '').upper())} D/ST"
         return log
 
     sleeper_module.fetch_sleeper_players = fetch_sleeper_players
