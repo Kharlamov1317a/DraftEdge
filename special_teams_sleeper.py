@@ -5,9 +5,11 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from special_teams_support import normalize_position
+from special_teams_data import TEAM_NAMES
 
 
 def _safe_float(value: Any, default: float) -> float:
@@ -39,8 +41,8 @@ def install_sleeper_support(sleeper_module, engine_module) -> None:
             full_name = p.get("full_name") or " ".join(
                 [str(p.get("first_name") or "").strip(), str(p.get("last_name") or "").strip()]
             ).strip()
-            if pos == "DST" and not full_name:
-                full_name = f"{team or str(pid).upper()} D/ST"
+            if pos == "DST":
+                full_name = f"{TEAM_NAMES.get(team, team or str(pid).upper())} D/ST"
             if not full_name:
                 continue
             rows.append({
@@ -55,7 +57,7 @@ def install_sleeper_support(sleeper_module, engine_module) -> None:
                 "practice_status": p.get("practice_participation") or "",
                 "depth_chart_order": p.get("depth_chart_order"),
                 "depth_chart_position": p.get("depth_chart_position") or "",
-                "image_url": sleeper_module.sleeper_player_image_url(pid, thumb=False),
+                "image_url": "" if pos == "DST" else sleeper_module.sleeper_player_image_url(pid, thumb=False),
                 "data_source": "Sleeper player metadata",
             })
         return engine_module.normalize_player_data(pd.DataFrame(rows))
@@ -113,6 +115,12 @@ def install_sleeper_support(sleeper_module, engine_module) -> None:
                     updates[attr] = _safe_float(scoring.get(key), getattr(cfg, attr))
 
         cfg = replace(cfg, **updates)
+        try:
+            import streamlit as st
+            st.session_state.special_k_slots = int(cfg.k)
+            st.session_state.special_dst_slots = int(cfg.dst)
+        except Exception:
+            pass
         return cfg
 
     def draft_log_from_sleeper(picks, ranked_players, sleeper_players=None):
