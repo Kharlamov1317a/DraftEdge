@@ -148,6 +148,11 @@ def normalize_footballguys_complete(frame: pd.DataFrame) -> tuple[pd.DataFrame, 
     out["player"] = selected["name"].fillna("").astype(str).map(unescape).str.strip()
     out["team"] = selected["team"].map(_team)
     out["position"] = selected["pos"].map(lambda p: normalize_position(str(p).upper()))
+    dst_mask = out["position"].eq("DST")
+    if dst_mask.any():
+        out.loc[dst_mask, "player"] = out.loc[dst_mask].apply(
+            lambda row: f"{TEAM_NAMES.get(str(row['team']), str(row['player']))} D/ST", axis=1
+        )
     out["projection"] = _score_rows(selected, config).round(3)
     out["projected_games"] = pd.to_numeric(selected["ssn-gms"], errors="coerce")
     out["footballguys_id"] = selected["id"].fillna("").astype(str)
@@ -176,12 +181,17 @@ def _normalize_generic_special_source(frame: pd.DataFrame) -> pd.DataFrame:
         "projection": pd.to_numeric(f[proj_col], errors="coerce"),
         "team": f[team_col].map(_team) if team_col else "",
     })
+    dst_mask = out["position"].eq("DST") & out["team"].astype(str).ne("")
+    out.loc[dst_mask, "player"] = out.loc[dst_mask, "team"].map(
+        lambda team: f"{TEAM_NAMES.get(str(team), str(team))} D/ST"
+    )
     return out[out["position"].isin(["K", "DST"]) & out["projection"].notna()].copy()
 
 
 def _append_missing_special(master: pd.DataFrame, prepared_sources: list[tuple[str, pd.DataFrame, float]], engine) -> pd.DataFrame:
     base = engine.normalize_player_data(master).copy()
     existing = {(engine.normalize_name(r.player), str(r.position)) for r in base.itertuples()}
+    existing_dst_teams = set(base.loc[base["position"].eq("DST"), "team"].fillna("").astype(str))
     rows = []
     for source_name, source, _weight in prepared_sources:
         generic = _normalize_generic_special_source(source)
@@ -189,10 +199,12 @@ def _append_missing_special(master: pd.DataFrame, prepared_sources: list[tuple[s
             continue
         for _, row in generic.iterrows():
             key = (engine.normalize_name(row["player"]), str(row["position"]))
-            if key in existing:
+            team = _team(row.get("team"))
+            if key in existing or (row["position"] == "DST" and team and team in existing_dst_teams):
                 continue
             existing.add(key)
-            team = _team(row.get("team"))
+            if row["position"] == "DST" and team:
+                existing_dst_teams.add(team)
             pid = f"DST_{team}" if row["position"] == "DST" and team else f"SRC_{row['position']}_{engine.normalize_name(row['player'])[:22]}"
             rows.append({
                 "player_id": pid,
