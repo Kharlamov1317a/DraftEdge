@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-"""DraftEdge Ranking v3 with kicker and D/ST valuation."""
+"""DraftEdge Ranking v3 with kicker and D/ST valuation.
+
+The stable Ranking v2 model remains the base for offensive positions. This
+layer adds league-specific K/DST replacement value, more appropriate special-
+teams uncertainty, draft-timing strategy, and transparent explanations.
+"""
 
 from typing import Optional
 
@@ -13,6 +18,7 @@ from special_teams_support import apply_special_teams_support, normalize_positio
 apply_special_teams_support(engine)
 
 import ranking_v2_live as _base  # noqa: E402
+
 
 player_explanation_base = _base.player_explanation
 
@@ -232,6 +238,13 @@ def recommend_players(
     recs["recommendation_score"] = (
         _num(recs["recommendation_score"]).fillna(0.0) + recs["special_teams_adjustment"]
     ).round(2)
+
+    defer_special = recs["position"].isin(["K", "DST"]) & recs["special_teams_adjustment"].le(-7.0)
+    if defer_special.any():
+        recs.loc[defer_special, "scarcity_score"] = _num(recs.loc[defer_special, "scarcity_score"]).clip(upper=30.0)
+        recs.loc[defer_special, "p_available_next"] = _num(recs.loc[defer_special, "p_available_next"]).fillna(0.75).clip(lower=0.70)
+        recs.loc[defer_special, "urgency"] = 1.0 - recs.loc[defer_special, "p_available_next"]
+        recs.loc[defer_special, "take_now_edge"] = _num(recs.loc[defer_special, "take_now_edge"]).fillna(-6.0).clip(upper=-4.0)
 
     special_mask = recs["position"].isin(["K", "DST"]) & recs["special_teams_context"].ne("")
     recs.loc[special_mask, "why"] = recs.loc[special_mask].apply(
