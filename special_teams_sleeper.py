@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
-import numpy as np
 import pandas as pd
 
 from special_teams_support import normalize_position
@@ -69,13 +68,18 @@ def install_sleeper_support(sleeper_module, engine_module) -> None:
         base = engine_module.normalize_player_data(master)
 
         existing = {(engine_module.normalize_name(r.player), str(r.position)) for r in base.itertuples()}
+        existing_dst_teams = set(base.loc[base["position"].eq("DST"), "team"].fillna("").astype(str))
         specials = sleeper[sleeper["position"].isin(["K", "DST"])].copy()
         missing_rows = []
         for _, row in specials.iterrows():
             key = (engine_module.normalize_name(row["player"]), str(row["position"]))
-            if key not in existing:
-                existing.add(key)
-                missing_rows.append(row)
+            team = str(row.get("team") or "").upper().strip()
+            if key in existing or (row["position"] == "DST" and team in existing_dst_teams):
+                continue
+            existing.add(key)
+            if row["position"] == "DST" and team:
+                existing_dst_teams.add(team)
+            missing_rows.append(row)
         if missing_rows:
             base = pd.concat([base, pd.DataFrame(missing_rows)], ignore_index=True, sort=False)
             base = engine_module.normalize_player_data(base)
@@ -126,11 +130,23 @@ def install_sleeper_support(sleeper_module, engine_module) -> None:
 
     def draft_log_from_sleeper(picks, ranked_players, sleeper_players=None):
         log = original_log(picks, ranked_players, sleeper_players)
+        ranked = engine_module.normalize_player_data(ranked_players).copy()
+        dst_by_team = {
+            str(row["team"] or "").upper().strip(): row
+            for _, row in ranked[ranked["position"].eq("DST")].iterrows()
+            if str(row.get("team") or "").strip()
+        }
         for item in log:
             item["position"] = normalize_position(item.get("position") or "")
             if item["position"] == "DST":
                 team = str(item.get("nfl_team") or "").upper().strip()
-                if not str(item.get("player") or "").strip() or str(item.get("player") or "").startswith("Sleeper player"):
+                match = dst_by_team.get(team)
+                if match is not None:
+                    item["player_id"] = str(match["player_id"])
+                    item["player"] = str(match["player"])
+                    item["draft_value"] = float(match.get("draft_value", 0) or 0)
+                    item["image_url"] = ""
+                elif not str(item.get("player") or "").strip() or str(item.get("player") or "").startswith("Sleeper player"):
                     item["player"] = f"{TEAM_NAMES.get(team, team or str(item.get('sleeper_id') or '').upper())} D/ST"
         return log
 
