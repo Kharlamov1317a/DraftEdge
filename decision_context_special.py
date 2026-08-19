@@ -7,6 +7,7 @@ import requests
 
 import decision_context as _base
 from special_teams_support import normalize_position
+from special_teams_data import TEAM_NAMES
 
 
 apply_bye_overlap_context = _base.apply_bye_overlap_context
@@ -39,8 +40,8 @@ def fetch_sleeper_player_context(timeout: int = 45) -> pd.DataFrame:
         name = p.get("full_name") or " ".join(
             [str(p.get("first_name") or "").strip(), str(p.get("last_name") or "").strip()]
         ).strip()
-        if pos == "DST" and not name:
-            name = f"{team} D/ST"
+        if pos == "DST":
+            name = f"{TEAM_NAMES.get(team, team)} D/ST"
         if not name:
             continue
         rows.append({
@@ -55,11 +56,7 @@ def fetch_sleeper_player_context(timeout: int = 45) -> pd.DataFrame:
             "live_practice_status": "" if pos == "DST" else str(p.get("practice_participation") or "").strip(),
             "injury_start_date": "" if pos == "DST" else str(p.get("injury_start_date") or "").strip(),
             "injury_body_part": "" if pos == "DST" else str(p.get("injury_body_part") or p.get("injury_bodypart") or "").strip(),
-            "injury_notes": (
-                "Team D/ST represents the full defensive/special-teams unit; individual defender injuries are not summarized as one injury flag."
-                if pos == "DST"
-                else str(p.get("injury_notes") or p.get("injury_note") or "").strip()
-            ),
+            "injury_notes": "" if pos == "DST" else str(p.get("injury_notes") or p.get("injury_note") or "").strip(),
             "news_updated": p.get("news_updated"),
         })
     return pd.DataFrame(rows)
