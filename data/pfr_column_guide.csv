@@ -1,8 +1,8 @@
 canonical_column,common_input_names,notes
-player,"Player,name,player_name",required
-team,"Tm,team,recent_team",NFL team
-position,"FantPos,Pos,position",required; QB/RB/WR/TE
-age,Age,optional
+player,"Player,name,player_name",required; for D/ST use a unit name such as Detroit Lions D/ST
+team,"Tm,team,recent_team",NFL team abbreviation
+position,"FantPos,Pos,position",required; QB/RB/WR/TE/K/DST; PK maps to K and DEF/D-ST maps to DST
+age,Age,optional; not used for D/ST
 games,"G,games",recommended for historical rate calculations
 passing_yards,"passing_yards,Pass_Yds",rename repeated PFR Yds columns explicitly
 passing_td,"passing_td,passing_tds",rename repeated PFR TD columns explicitly
@@ -14,10 +14,26 @@ targets,"Tgt,targets",receiver usage
 receptions,"Rec,receptions",used for PPR/TE-premium scoring
 receiving_yards,"receiving_yards,Rec_Yds",rename explicitly
 receiving_td,"receiving_td,receiving_tds",rename explicitly
-fantasy_points,"FantPt,PPR,fantasy_points",historical fantasy total
+kicker_fg_attempts,"fg_attempts,FGA,kck_fga",optional kicker attempts
+kicker_fg_made,"fg_made,FGM,kck_fgc",kicker field goals made
+kicker_fg_missed,"fg_missed,FGMiss,kck_fgm",kicker field goals missed
+kicker_xp_attempts,"xp_attempts,XPA,kck_xpa",optional extra-point attempts
+kicker_xp_made,"xp_made,XPM,kck_xpc",extra points made
+kicker_xp_missed,"xp_missed,XPMiss,kck_xpm",extra points missed
+dst_sacks,"dst_sacks,def_sacks,sacks,tmd_sck",team-defense sacks
+dst_interceptions,"dst_interceptions,def_interceptions,tmd_int",team-defense interceptions
+dst_fumble_recoveries,"dst_fumble_recoveries,fumble_recoveries,tmd_fmr",team-defense fumble recoveries
+dst_td,"dst_td,def_td,defensive_td,tmd_td",defensive touchdowns
+dst_safeties,"dst_safeties,safeties,tmd_saf",safeties
+dst_blocked_kicks,"dst_blocked_kicks,blocked_kicks,tmd_blk",blocked kicks
+dst_return_td,"dst_return_td,return_td,special_teams_td",kick/punt return touchdowns
+dst_two_point_returns,"dst_two_point_returns,def_2pt,tmd_2pr",defensive two-point returns
+dst_points_allowed,"dst_points_allowed,points_allowed,PA,tmd_pa",season or game points allowed depending source
+dst_yards_allowed,"dst_yards_allowed,yards_allowed,YA,tmd_ya",optional; retained for custom data
+fantasy_points,"FantPt,PPR,fantasy_points",historical fantasy total when already scored
 projection,"projection,projected_points,proj",current-season point projection
 adp,"ADP,average_draft_position",market draft position
-ecr,"ECR,rank,overall_rank",expert/market rank
-injury_status,"injury_status,status",optional current context
+ecr,"ECR,rank,overall_rank",expert/market rank; leave blank when not genuine market consensus
+injury_status,"injury_status,status",optional current context; meaningful for players/kickers, not D/ST as a unit
 depth_chart_order,"depth_chart_order,depth",optional current context
 sleeper_id,sleeper_id,used for direct Sleeper pick matching
